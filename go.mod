@@ -1,6 +1,6 @@
 module github.com/any-call/myautostart
 
-go 1.24.1
+go 1.22.2
 
 require github.com/go-ole/go-ole v1.3.0
 
