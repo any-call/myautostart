@@ -1,6 +1,7 @@
 package myautostart
 
 import (
+	"github.com/go-ole/go-ole"
 	"github.com/go-ole/go-ole/oleutil"
 	"os"
 	"path/filepath"
