@@ -1,59 +1,70 @@
 package myautostart
 
 import (
-	"github.com/go-ole/go-ole"
-	"github.com/go-ole/go-ole/oleutil"
+	"golang.org/x/sys/windows/registry"
 	"os"
 	"path/filepath"
 )
 
-var startupDir string
+const (
+	runRegistryKey = `Software\Microsoft\Windows\CurrentVersion\Run`
+)
 
-func init() {
-	startupDir = filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
-}
-
-func (a *App) path() string {
-	return filepath.Join(startupDir, a.Name+".lnk")
+func (a *App) getExePath() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Abs(exe)
 }
 
 func (a *App) IsEnabled() bool {
-	_, err := os.Stat(a.path())
-	return err == nil
+	key, err := registry.OpenKey(registry.CURRENT_USER, runRegistryKey, registry.QUERY_VALUE)
+	if err != nil {
+		return false
+	}
+	defer func() {
+		_ = key.Close()
+	}()
+
+	val, _, err := key.GetStringValue(a.Name)
+	if err == registry.ErrNotExist {
+		return false
+	} else if err != nil {
+		return false
+	}
+
+	exePath, err := a.getExePath()
+	if err != nil {
+		return false
+	}
+
+	return val == exePath
 }
 
 func (a *App) Enable() error {
-	path := a.Exec[0]
-	//args := strings.Join(a.Exec[1:], " ")
+	key, _, err := registry.CreateKey(registry.CURRENT_USER, runRegistryKey, registry.SET_VALUE)
+	if err != nil {
+		return err
+	}
+	defer key.Close()
 
-	if err := os.MkdirAll(startupDir, 0777); err != nil {
-		return err
-	}
-	ole.CoInitializeEx(0, ole.COINIT_APARTMENTTHREADED|ole.COINIT_SPEED_OVER_MEMORY)
-	oleShellObject, err := oleutil.CreateObject("WScript.Shell")
+	exePath, err := a.getExePath()
 	if err != nil {
-		return err
-	}
-	defer oleShellObject.Release()
-	wshell, err := oleShellObject.QueryInterface(ole.IID_IDispatch)
-	if err != nil {
-		return err
-	}
-	defer wshell.Release()
-	cs, err := oleutil.CallMethod(wshell, "CreateShortcut", a.path())
-	//res := C.CreateShortcut(C.CString(a.path()), C.CString(path), C.CString(args))
-	if err != nil {
-		return err
-	}
-	idispatch := cs.ToIDispatch()
-	oleutil.PutProperty(idispatch, "TargetPath", path)
-	if _, err = oleutil.CallMethod(idispatch, "Save"); err != nil {
 		return err
 	}
 
-	return nil
+	return key.SetStringValue(a.Name, exePath)
 }
 
 func (a *App) Disable() error {
-	return os.Remove(a.path())
+	key, err := registry.OpenKey(registry.CURRENT_USER, runRegistryKey, registry.SET_VALUE)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = key.Close()
+	}()
+
+	return key.DeleteValue(a.Name)
 }
